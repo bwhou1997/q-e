@@ -145,7 +145,7 @@
           ENDDO
         ENDDO
       ENDDO
-      epc(:, :, :, ik + lower_bnd - 1) = epc_sym
+      ! epc(:, :, :, ik + lower_bnd - 1) = epc_sym
       ! Then the k electrons
       DO nu = 1, nmodes
         DO jbnd = 1, nbndfst
@@ -165,7 +165,7 @@
           ENDDO
         ENDDO
       ENDDO
-      epc(:, :, :, ik + lower_bnd - 1) = epc_sym
+      ! epc(:, :, :, ik + lower_bnd - 1) = epc_sym
       !
       ! and finally the k+q electrons
       DO nu = 1, nmodes
@@ -186,7 +186,7 @@
           ENDDO
         ENDDO
       ENDDO
-      epc(:, :, :, ik + lower_bnd - 1) = epc_sym
+      ! epc(:, :, :, ik + lower_bnd - 1) = epc_sym
       !
     ENDDO ! k-points
     !

@@ -87,3 +87,105 @@ for more details.
 You should have received a copy of the GNU General Public License along
 with this program; if not, write to the Free Software Foundation, Inc.,
 675 Mass Ave, Cambridge, MA 02139, USA.
+
+
+## Update for develop_epw
+
+Compile hdf5 with `--enable-fortran --enable-parallel` option. Then compile QE with the following steps:
+
+```
+git clone --single-branch --branch develop_epw https://github.com/krishnaa423/q-e.git
+cd q-e
+rm -rf ./external/devxlib ./external/mbd
+./configure --prefix=<your_install_location> --enable-parallel --with-hdf5=yes
+make all
+make epw
+make install
+```
+
+The configure script should list the location of HDF5_LIBS at the end. If not, HDF5 has not been
+detected, and you must specify the location of the hdf5 libraries manually. You might also have to
+specify the location of the HDF5 include paths. For more info, you can look at the QE user guide. 
+
+Once QE has been compiled with HF5, make sure `epw.in` has the following options set to get 
+the electron-phonon matrix elements on the coarse grid. 
+
+```
+epbwrite = .true.
+```
+
+This will write the a file `<QE_prefix>_elph_<pool_id>.h5` for each pool, with the following datasets. 
+
+The datasets shape order is given assuming one reading the array in C order (this is the order
+if you read the hdf5 file using the python library). 
+
+- atomic_masses. Size is (3*nat). Rydberg atomic mass units (see section on units). 
+- dynmat_real, dynmat_imag. Size is (nqs, nmodes, nmodes). Entry is (q, j, i). Assuming Ry^2.
+- elph_cart_real, elph_cart_imag. Size is (nqs, 3*nat, nks_each_pool, nbands, nbands). Entry is (q, s\alpha, k, j, i). Not sure. 
+- elph_nu_real, elph_nu_imag. Size is (nqs, nmodes, nks_each_pool, nbands, nbands). Entry is (q, nu, k, j, i). Ry. 
+- ph_eigs. Size is (nqs, nmodes). Entry is (q, nu). Ry. 
+- ph_evecs_real, ph_evecs_imag. Size is (nmodes, nqs, 3*nat). Entry is (nu, q, s\alpha). No units.   
+
+### Equations and notation
+
+Notation for the equations is:
+
+- Unit cell index: $l$
+- Atomic index: $s \alpha$
+- Phonon mode: $\nu$
+- Band index: $i, j$
+- k-point: $k$
+- q-point: $q$
+
+Assumed expressions for the datasets written. 
+
+
+
+Dynamical matrix:
+
+$$
+\Phi_{\alpha \beta} = \frac{\partial^2 V_{dft}}{ \partial R_{i\alpha} \partial R_{j \beta}}
+$$
+
+$$
+D_{s\alpha, s'\alpha'}(q) = \frac{1}{\sqrt{M_s M_{s'}}} \sum_{l} \Phi_{\alpha \alpha'} (l s, 0 s') e^{-i q (R_{ls}^{0} - R_{0s'}^{0})} 
+$$
+
+Phonon eigenvectors and eigenvalues:
+
+$$
+D_{s\alpha, s'\alpha'}(q) \eta_{s' \alpha'} (q \nu) = \omega_{q \nu}^2 \eta_{s\alpha} (q \nu)
+$$
+
+$\eta$ is the eigenvector, $\omega$ is the eigenvalue.
+
+Transformation factor definition:
+
+$$
+A_{s\alpha, q \nu} = \frac{\eta_{s\alpha} (q \nu)}{\sqrt{2 M_{s} \omega_{q \nu}}}
+$$
+
+Electron-phonon matrix elements in phonon mode basis:
+
+$$
+g_{i, j} (k, \nu, q) = \sum_{s\alpha} A_{s\alpha, q \nu} \langle i k + q| \frac{ \partial V_{dft} }{\partial u_{q s \alpha}} | j k \rangle
+$$
+
+### Units
+
+For now, i'm assuming most of them are written in Rydberg atomic units. In these units, 
+
+- $\hbar = 1$. 
+- $m = \frac{1}{2}$. 
+- $e = \sqrt{2}$. 
+- $4 \pi \epsilon_0 = 1$. Not entirely sure about this one.  
+
+With the above 4 choices, we get units for length, time, mass, charge. 
+
+### Things to verify in develop_epw
+
+- Are the units correct?
+- Is the band dimension the slimmed down version?
+- Is the divisionn by mass and frequency done at the correct times? 
+
+

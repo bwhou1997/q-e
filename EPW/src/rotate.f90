@@ -49,8 +49,13 @@
     !
     !--------------------------------------------------------------------------
     USE kinds,         ONLY : DP
-    USE io_global,     ONLY : stdout
+    USE io_global,     ONLY : stdout    
+    ! KV: Import variables needed for HDF5 file output. 
+#if defined(__HDF5)
+    USE elph2,         ONLY : dynq, dynmat, ph_eigs, ph_evecs
+#else
     USE elph2,         ONLY : dynq
+#endif
     USE modes,         ONLY : nmodes
     USE constants_epw, ONLY : cone, czero, twopi, rydcm1, eps10, cmm12meV
     USE control_flags, ONLY : iverbosity
@@ -155,7 +160,7 @@
     CALL ZHPEVX('V', 'A', 'U', nmodes, dynp , 0.0, 0.0, &
                  0, 0, -1.0, neig, w1, cz1, nmodes, cwork, rwork, iwork, ifail, info)
     !
-    IF (iverbosity == 1) THEN
+    !IF (iverbosity == 1) THEN
       !
       ! check the frequencies
       DO nu = 1, nmodes
@@ -168,7 +173,7 @@
       WRITE(stdout, '(5x,"Frequencies of the matrix for the first q in the star (cm^{-1})")')
       WRITE(stdout, '(6(2x,f10.5))') (wtmp(nu) * rydcm1, nu = 1, nmodes)
       !
-    ENDIF
+    !ENDIF
     !
     ! here dyn1 is dynq(:,:,iq_first) after dividing by the masses
     ! (the true dyn matrix D_q)
@@ -210,15 +215,20 @@
     !
     !  possibly run some consistency checks
     !
-    IF (iverbosity == 1) THEN
+    !IF (iverbosity == 1) THEN
       !
       !  D_{Sq} = gamma * D_q * gamma^\dagger (Maradudin & Vosko, RMP, eq. 3.5)
       !
+
+      ! dyn2 = gamma * dyn1. 
+      ! dyn1 = dyn2 * gamma'. 
+      ! In effect it does: dyn1 = gamma * dyn1 * gamma'.  
       CALL ZGEMM('n', 'n', nmodes, nmodes, nmodes, cone, gamma, &
              nmodes, dyn1 , nmodes, czero , dyn2, nmodes)
       CALL ZGEMM('n', 'c', nmodes, nmodes, nmodes, cone, dyn2, &
              nmodes, gamma, nmodes, czero, dyn1, nmodes)
-      !
+      
+      ! Upper triangular matrix. Why do the symmetrization if it is already Hermitian?  
       DO jmode = 1, nmodes
         DO imode = 1, jmode
           dynp(imode + (jmode - 1) * jmode / 2) = (dyn1(imode, jmode) + CONJG(dyn1(jmode, imode))) / 2.d0
@@ -227,6 +237,7 @@
       !
       CALL ZHPEVX('V', 'A', 'U', nmodes, dynp, 0.0, 0.0, &
                   0, 0, -1.0, neig, w2, cz2, nmodes, cwork, rwork, iwork, ifail, info)
+
       !
       ! Check the frequencies
       !
@@ -240,7 +251,23 @@
       WRITE(stdout, '(5x,"Frequencies of the matrix for the first q in the star (meV)")')
       WRITE(stdout, '(6(2x,f10.5))') (wtmp(nu) * rydcm1 * cmm12meV, nu = 1, nmodes)
       !
-    ENDIF
+    !ENDIF
+
+    ! KV: At this point, there is dynmat, ph_eigs, ph_evecs for the current q point in the star. 
+#if defined(__HDF5)
+    ! Assuming nqc holds the index of the current q-point. Based on the code below. 
+    
+    ! Saving dynmat. (nmodes, nmodes, nqc1*nqc2*nqc3)
+    dynmat(:, :, nqc) = dyn1(:, :)   ! Dynamical matrix in (rydberg energy)^2 ?  
+
+    ! Saving ph_eigs. (nmodes, nqc1*nqc2*nqc3). 
+    ph_eigs(:, nqc) = wtmp(:)        ! In rydbergs energy. 
+
+    ! Saving ph_evecs. (3*nat, nqc1*nqc2*nqc3, nmodes). 
+    ph_evecs(:, nqc, :) = cz2(:, :)  ! No units. 
+
+#endif 
+
     !
     !
     ! -----------------------------------------------------------------------

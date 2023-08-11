@@ -52,10 +52,24 @@
                             nbndsub, iswitch, kmaps, eig_read, dvscf_dir,       &
                             nkc1, nkc2, nkc3, nqc1, nqc2, nqc3, lpolar,         &
                             fixsym, epw_noinv, system_2d
+#if defined(__HDF5)
+  ! KV: Included to import selected variables alone. 
+  USE elph2,         ONLY : epmatq, dynq, et_ks, xkq, ifc, umat, umat_all, veff,&
+                              zstar, epsi, cu, cuq, lwin, lwinq, bmat, nbndep,    &
+                              ngxx, exband, wscache, area, ngxxf, ng0vec, shift,  &
+                              gmap, g0vec_all_r, Qmat, qrpl, &
+                              atomic_masses, &
+                              dynmat, &
+                              ph_eigs, &
+                              ph_evecs, &
+                              elph_nu
+#else
   USE elph2,         ONLY : epmatq, dynq, et_ks, xkq, ifc, umat, umat_all, veff,&
                             zstar, epsi, cu, cuq, lwin, lwinq, bmat, nbndep,    &
                             ngxx, exband, wscache, area, ngxxf, ng0vec, shift,  &
                             gmap, g0vec_all_r, Qmat, qrpl
+#endif
+
   USE klist_epw,     ONLY : et_loc, et_all
   USE constants_epw, ONLY : ryd2ev, zero, two, czero, eps6, eps8
   USE fft_base,      ONLY : dfftp
@@ -77,6 +91,11 @@
 #if defined(__NAG)
   USE f90_unix_io,   ONLY : flush
 #endif
+
+! KV: Include HDF5 module for file writing. 
+#if defined(__HDF5)
+  USE hdf5 
+#endif 
   !
   ! --------------------------------------------------------------
   !
@@ -207,6 +226,35 @@
   !! The rotated eigenvectors, for the current q in the star
   COMPLEX(KIND = DP), ALLOCATABLE :: eigv(:, :)
   !! $e^{ iGv}$ for 1...nsym (v the fractional translation)
+
+  ! KV: Included variables for HDF5 IO. 
+  ! No parallel writing. Each pool/image writes its one HDF5 file. 
+#if defined(__HDF5)
+  integer(kind=hid_t) :: file_id, &
+    filespace_id, &
+    dataset_id ! HDF5 file parameters. 
+  integer :: atomic_masses_rank, &
+    dynmat_rank, &
+    ph_eigs_rank, &
+    ph_evecs_rank, &
+    elph_cart_rank, &
+    elph_nu_rank   ! Dataset ranks. 
+  integer(kind=hsize_t) :: atomic_masses_dims(1), &
+    dynmat_dims(3), &
+    ph_eigs_dims(2), &
+    ph_evecs_dims(3), &
+    elph_cart_dims(5), &
+    elph_nu_dims(5)     ! Dataset dimensions. 
+  integer :: iter_idx = 0, &
+    iter_i, &
+    iter_j, &
+    iter_k, &
+    iter_mode, &
+    iter_3nat, &
+    iter_q   ! Variable for iteration in do while loops. 
+#endif 
+
+
   !
   CALL start_clock('elphon_wrap')
   !
@@ -479,6 +527,41 @@
     IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating lwinq', 1)
     ALLOCATE(exband(nbnd), STAT = ierr)
     IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating exband', 1)
+
+    ! KV: Allocate and initialzie the variables for datasets that are written out in '<prefix>_elph_<pool_num>.h5'. 
+#if defined(__HDF5)
+    ! Allocate atomic masses. (3*nat).
+    allocate(atomic_masses(3*nat), stat=ierr)
+    IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating atomic_masses', 1)
+    atomic_masses(:) = zero
+
+    ! Get the atomic masses. 
+    do iter_idx = 0, (3*nat-1)
+      atomic_masses(iter_idx + 1) = amass(ityp( iter_idx/3 +1 ))   ! In Rydberg atomic units. 
+    end do 
+
+    ! Allocate dynmat. (nmodes, nmodes, nqcs).
+    allocate(dynmat(nmodes, nmodes, nqc1 * nqc2 * nqc3), stat=ierr)
+    IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating dynmat', 1)
+    dynmat(:, :, :) = czero
+
+    ! Allocate ph_evecs. (nmodes, nqcs, nmodes).
+    allocate(ph_evecs(nmodes, nqc1 * nqc2 * nqc3, nmodes), stat=ierr)
+    IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating ph_evecs', 1)
+    ph_evecs(:, :, :) = czero
+
+    ! Allocate ph_eigs. (nmodes, nqcs). 
+    allocate(ph_eigs(nmodes, nqc1 * nqc2 * nqc3), stat=ierr)
+    IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating ph_eigs', 1)
+    ph_eigs(:, :) = zero
+
+    ! Allocate elph_nu. (nbnds, nbnds, nks, nmodes, nqcs).
+    allocate(elph_nu(nbndep, nbndep, nks, nmodes, nqc1 * nqc2 * nqc3), stat=ierr)
+    IF (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error allocating elph_nu', 1)
+    elph_nu(:, :, :, :, :) = czero
+
+#endif
+
     dynq(:, :, :)         = czero
     epmatq(:, :, :, :, :) = czero
     epsi(:, :)            = zero
@@ -926,6 +1009,144 @@
         WRITE(iuepb) nqc, xqc, et_loc, dynq, epmatq, zstar, epsi
         CLOSE(iuepb)
         WRITE(stdout, '(/5x, "The .epb files have been correctly written"/)')
+
+        ! KV: Write the elph matrix to HDF5 file format here.
+#if defined(__HDF5)
+
+        ! Datasets. 
+        ! atomic_masses: (3*nat). 
+        ! dynmat: (3*nat, 3*nat, nqcs). Ry^2 units. Sure about the units?
+        ! ph_eigs: (nmodes, nqtot). Ry units. 
+        ! ph_evecs: (3*nat, nqcs, nmodes). No units. 
+        ! elph_nu: (nbnd, nbnd, nks, nmodes, nqcs). Ry units.  
+        ! elph_cart: Same as epmatq. epmatq: (nbnd, nbnd, nks, 3*nat, nqcs). Not divided by sqrt(2*mass*frequency) factor. What units? 
+
+        ! Calculate elph_nu. (nbnd, nbnd, nks, nmodes, nqcs). After division by sqrt(2*mass*frequency). Ry units.  
+        do iter_i = 1, nbndep
+          do iter_j = 1, nbndep
+            do iter_k = 1, nks
+              do iter_q = 1, (nqc1*nqc2*nqc3)
+                do iter_mode = 1, nmodes      ! Can also be thought of as 3*nat. 
+                  
+                  ! elph_nu: Do the dot product sum. Haven't divided by frequency factor yet.  
+                  elph_nu(iter_i, iter_j, iter_k, iter_mode, iter_q) = &
+                    dot_product( &
+                      ph_evecs(:, iter_q, iter_mode)/dsqrt(atomic_masses(:)), &
+                      epmatq(iter_i, iter_j, iter_k, :, iter_q) &
+                    )
+
+                  ! elph_nu: Divide by sqrt(2*frequency). Set to zero if freq is 0. 
+                  if (ph_eigs(iter_mode, iter_q) > 0.d0) then
+                    
+                    ! Division by frequency factor.  
+                    elph_nu(iter_i, iter_j, iter_k, iter_mode, iter_q) = &
+                      elph_nu(iter_i, iter_j, iter_k, iter_mode, iter_q) &
+                      / dsqrt(2*ph_eigs(iter_mode, iter_q))    !  frequency factor.  
+                  else 
+                    elph_nu(iter_i, iter_j, iter_k, iter_mode, iter_q) = (0.d0, 0.d0)
+                  end if
+
+                end do
+              end do
+            end do
+          end do
+        end do 
+
+        ! Write all of them. 
+        call h5open_f(ierr)
+
+        ! File. 
+        tempfile = TRIM(tmp_dir) // TRIM(prefix) // '_' // 'elph_' // TRIM(filelab) // '.h5'   ! File name (one for each pool).  
+        WRITE(stdout, '(/5x, a, a/)') 'KV: Started writing ', tempfile
+        call h5fcreate_f(tempfile, H5F_ACC_TRUNC_F, file_id, ierr) 
+
+        ! Write atomic_masses. Ry atomic units. (3*nat)
+        atomic_masses_dims = shape(atomic_masses)
+        atomic_masses_rank = size(atomic_masses_dims)
+        call h5screate_simple_f(atomic_masses_rank, atomic_masses_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'atomic_masses', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, atomic_masses, atomic_masses_dims, ierr)  
+
+        ! Write dynmat. Ry^2?. (3*nat, 3*nat, nqcs)
+        dynmat_dims = shape(dynmat)
+        dynmat_rank = size(dynmat_dims)
+        call h5screate_simple_f(dynmat_rank, dynmat_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'dynmat_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(dynmat), dynmat_dims, ierr)  
+        call h5dcreate_f(file_id, 'dynmat_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(dynmat), dynmat_dims, ierr)  
+
+        ! Write ph_eigs. Ry. (nmodes, nqtot).
+        ph_eigs_dims = shape(ph_eigs)
+        ph_eigs_rank = size(ph_eigs_dims)
+        call h5screate_simple_f(ph_eigs_rank, ph_eigs_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'ph_eigs', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, ph_eigs, ph_eigs_dims, ierr)  
+
+        ! Write ph_evecs. No units. (3*nat, nqcs, nmodes).
+        ph_evecs_dims = shape(ph_evecs)
+        ph_evecs_rank = size(ph_evecs_dims)
+        call h5screate_simple_f(ph_evecs_rank, ph_evecs_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'ph_evecs_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(ph_evecs), ph_evecs_dims, ierr)  
+        call h5dcreate_f(file_id, 'ph_evecs_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(ph_evecs), ph_evecs_dims, ierr)  
+
+        ! Write elph_cart. What units? (nbnd, nbnd, nks, 3*nat, nqcs). Not divided by sqrt(2*mass*freq) factor. 
+        elph_cart_dims = shape(epmatq)
+        elph_cart_rank = size(elph_cart_dims)
+        call h5screate_simple_f(elph_cart_rank, elph_cart_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'elph_cart_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(epmatq), elph_cart_dims, ierr)  
+        call h5dcreate_f(file_id, 'elph_cart_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(epmatq), elph_cart_dims, ierr)  
+
+        ! Write elph_nu. Ry. (nbnd, nbnd, nks, nmodes, nqcs).
+        elph_nu_dims = shape(elph_nu)
+        elph_nu_rank = size(elph_nu_dims)
+        call h5screate_simple_f(elph_nu_rank, elph_nu_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'elph_nu_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(elph_nu), elph_nu_dims, ierr)  
+        call h5dcreate_f(file_id, 'elph_nu_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(elph_nu), elph_nu_dims, ierr)  
+        
+
+        ! File/Dataspace/Dataset close. 
+        call h5dclose_f(dataset_id, ierr)
+        call h5sclose_f(filespace_id, ierr)
+        call h5fclose_f(file_id, ierr)
+        call h5close_f(ierr)
+
+        ! Write to log that elph mat was written out. 
+        WRITE(stdout, '(/5x, a, a/)') 'KV: Done writing ', tempfile
+
+        
+
+        ! Deallocate variables. 
+        WRITE(stdout, '(/5x, a/)') 'KV: Starting to deallocate variables for h5 writing.'
+        ! Atomic masses. 
+        deallocate(atomic_masses, STAT = ierr)
+        if (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error deallocating atomic_masses', 1)
+
+        ! ph_eigs. 
+        deallocate(ph_eigs, STAT = ierr)
+        if (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error deallocating ph_eigs', 1)
+
+        ! ph_evecs.
+        deallocate(ph_evecs, STAT = ierr)
+        if (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error deallocating ph_evecs', 1)
+
+        ! dynmat. 
+        deallocate(dynmat, STAT = ierr)
+        if (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error deallocating dynmat', 1)
+
+        ! elph_nu. 
+        deallocate(elph_nu, STAT = ierr)
+        if (ierr /= 0) CALL errore('elphon_shuffle_wrap', 'Error deallocating elph_nu', 1)
+
+        WRITE(stdout, '(/5x, a/)') 'KV: Done deallocating variables for h5 writing.'
+#endif  
+
       ENDIF
     ENDIF
   ENDIF

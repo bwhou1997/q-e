@@ -193,6 +193,18 @@
     veff(:, :),               &!  effective potential
     eimpf17(:, :, :)           !  full e-impurity matrix in bloch rep stored in mem (nbnd, nbnd, nkf) - nbnd inside wndow
     !!!!
+#if defined(__HDF5)
+    ! Datasets to write out. 
+    real(kind=DP), allocatable :: &     
+      ph_eigs(:, :), &                 ! (nmodes, nqtot). Ry units. 
+      atomic_masses(:)                   ! (3*nat). We just repeat the same mass for x, y, z coordinate.
+      ! Also print amass(1:nat). 
+    complex(kind=DP), allocatable :: &
+      ! elph_cart is already given by epmatq. Need not duplicate variable here. 
+      elph_nu(:, :, :, :, :), &      !elph matrix for every q. (nbnd, nbnd, nks, nmodes, nqcs). Ry units. 
+      dynmat(:, :, :), &               !dynamical matrix for every q (3*nat, 3*nat, nqcs). Ry/bohr^2 units. 
+      ph_evecs(:, :, :)              !phonon eigenvectors in cartesian basis (3*nat, nqcs, nmodes). No units. 
+#endif
   !
   ! -------------------------------------------------------------------------
   ! Added for polaron calculations. Originally by Danny Sio, modified by Chao Lian.
