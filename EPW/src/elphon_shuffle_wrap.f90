@@ -234,12 +234,18 @@
     filespace_id, &
     dataset_id ! HDF5 file parameters. 
   integer :: atomic_masses_rank, &
+    amass_rank, &
+    ityp_rank, &
+    dynq_rank, &
     dynmat_rank, &
     ph_eigs_rank, &
     ph_evecs_rank, &
     elph_cart_rank, &
     elph_nu_rank   ! Dataset ranks. 
   integer(kind=hsize_t) :: atomic_masses_dims(1), &
+    amass_dims(1), &
+    ityp_dims(1), &
+    dynq_dims(3), &
     dynmat_dims(3), &
     ph_eigs_dims(2), &
     ph_evecs_dims(3), &
@@ -998,7 +1004,7 @@
         IF (.NOT.  exst) CALL errore('elphon_shuffle_wrap', 'epb files not found ', 1)
         OPEN(iuepb, FILE = tempfile, FORM = 'unformatted')
         WRITE(stdout, '(/5x, "Reading epmatq from .epb files"/)')
-        READ(iuepb) nqc, xqc, et_loc, dynq, epmatq, zstar, epsi
+        READ(iuepb) epmatq
         CLOSE(iuepb)
         WRITE(stdout, '(/5x, "The .epb files have been correctly read"/)')
       ENDIF
@@ -1006,7 +1012,7 @@
       IF (epbwrite) THEN
         OPEN(iuepb, FILE = tempfile, FORM = 'unformatted')
         WRITE(stdout, '(/5x, "Writing epmatq on .epb files"/)')
-        WRITE(iuepb) nqc, xqc, et_loc, dynq, epmatq, zstar, epsi
+        WRITE(iuepb) epmatq
         CLOSE(iuepb)
         WRITE(stdout, '(/5x, "The .epb files have been correctly written"/)')
 
@@ -1060,37 +1066,61 @@
         WRITE(stdout, '(/5x, a, a/)') 'KV: Started writing ', tempfile
         call h5fcreate_f(tempfile, H5F_ACC_TRUNC_F, file_id, ierr) 
 
-        ! Write atomic_masses. Ry atomic units. (3*nat)
+        ! Write atomic_masses. Ry atomic units. (3*nat) 
+        ! TODO: deprecate this after test
         atomic_masses_dims = shape(atomic_masses)
         atomic_masses_rank = size(atomic_masses_dims)
         call h5screate_simple_f(atomic_masses_rank, atomic_masses_dims, filespace_id, ierr)
         call h5dcreate_f(file_id, 'atomic_masses', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
         call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, atomic_masses, atomic_masses_dims, ierr)  
 
+        ! Write types. 
+        ityp_dims = shape(ityp)
+        ityp_rank = size(ityp)
+        call h5screate_simple_f(ityp_rank, ityp_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'itype', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, ityp, ityp_dims, ierr)  
+
+        ! Write amasses. (3*nat)
+        amass_dims = shape(amass)
+        amass_rank = size(amass)
+        call h5screate_simple_f(amass_rank, amass_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'amass', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, amass, amass_dims, ierr)  
+        
+        ! Write dynq  (3*nat, 3*nat, nqcs)
+        dynq_dims = shape(dynq)
+        dynq_rank = size(dynq_dims)
+        call h5screate_simple_f(dynq_rank, dynq_dims, filespace_id, ierr)
+        call h5dcreate_f(file_id, 'dynq_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(dynq), dynq_dims, ierr)
+        call h5dcreate_f(file_id, 'dynq_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(dynq), dynq_dims, ierr)
+
         ! Write dynmat. Ry^2?. (3*nat, 3*nat, nqcs)
-        dynmat_dims = shape(dynmat)
-        dynmat_rank = size(dynmat_dims)
-        call h5screate_simple_f(dynmat_rank, dynmat_dims, filespace_id, ierr)
-        call h5dcreate_f(file_id, 'dynmat_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(dynmat), dynmat_dims, ierr)  
-        call h5dcreate_f(file_id, 'dynmat_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(dynmat), dynmat_dims, ierr)  
+        ! dynmat_dims = shape(dynmat)
+        ! dynmat_rank = size(dynmat_dims)
+        ! call h5screate_simple_f(dynmat_rank, dynmat_dims, filespace_id, ierr)
+        ! call h5dcreate_f(file_id, 'dynmat_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(dynmat), dynmat_dims, ierr)  
+        ! call h5dcreate_f(file_id, 'dynmat_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(dynmat), dynmat_dims, ierr)  
 
         ! Write ph_eigs. Ry. (nmodes, nqtot).
-        ph_eigs_dims = shape(ph_eigs)
-        ph_eigs_rank = size(ph_eigs_dims)
-        call h5screate_simple_f(ph_eigs_rank, ph_eigs_dims, filespace_id, ierr)
-        call h5dcreate_f(file_id, 'ph_eigs', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, ph_eigs, ph_eigs_dims, ierr)  
+        ! ph_eigs_dims = shape(ph_eigs)
+        ! ph_eigs_rank = size(ph_eigs_dims)
+        ! call h5screate_simple_f(ph_eigs_rank, ph_eigs_dims, filespace_id, ierr)
+        ! call h5dcreate_f(file_id, 'ph_eigs', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, ph_eigs, ph_eigs_dims, ierr)  
 
         ! Write ph_evecs. No units. (3*nat, nqcs, nmodes).
-        ph_evecs_dims = shape(ph_evecs)
-        ph_evecs_rank = size(ph_evecs_dims)
-        call h5screate_simple_f(ph_evecs_rank, ph_evecs_dims, filespace_id, ierr)
-        call h5dcreate_f(file_id, 'ph_evecs_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(ph_evecs), ph_evecs_dims, ierr)  
-        call h5dcreate_f(file_id, 'ph_evecs_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(ph_evecs), ph_evecs_dims, ierr)  
+        ! ph_evecs_dims = shape(ph_evecs)
+        ! ph_evecs_rank = size(ph_evecs_dims)
+        ! call h5screate_simple_f(ph_evecs_rank, ph_evecs_dims, filespace_id, ierr)
+        ! call h5dcreate_f(file_id, 'ph_evecs_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(ph_evecs), ph_evecs_dims, ierr)  
+        ! call h5dcreate_f(file_id, 'ph_evecs_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(ph_evecs), ph_evecs_dims, ierr)  
 
         ! Write elph_cart. What units? (nbnd, nbnd, nks, 3*nat, nqcs). Not divided by sqrt(2*mass*freq) factor. 
         elph_cart_dims = shape(epmatq)
@@ -1102,13 +1132,13 @@
         call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(epmatq), elph_cart_dims, ierr)  
 
         ! Write elph_nu. Ry. (nbnd, nbnd, nks, nmodes, nqcs).
-        elph_nu_dims = shape(elph_nu)
-        elph_nu_rank = size(elph_nu_dims)
-        call h5screate_simple_f(elph_nu_rank, elph_nu_dims, filespace_id, ierr)
-        call h5dcreate_f(file_id, 'elph_nu_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(elph_nu), elph_nu_dims, ierr)  
-        call h5dcreate_f(file_id, 'elph_nu_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(elph_nu), elph_nu_dims, ierr)  
+        ! elph_nu_dims = shape(elph_nu)
+        ! elph_nu_rank = size(elph_nu_dims)
+        ! call h5screate_simple_f(elph_nu_rank, elph_nu_dims, filespace_id, ierr)
+        ! call h5dcreate_f(file_id, 'elph_nu_real', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, real(elph_nu), elph_nu_dims, ierr)  
+        ! call h5dcreate_f(file_id, 'elph_nu_imag', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        ! call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, aimag(elph_nu), elph_nu_dims, ierr)  
         
 
         ! File/Dataspace/Dataset close. 

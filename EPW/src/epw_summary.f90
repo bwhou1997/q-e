@@ -97,11 +97,11 @@
        (i, celldm(i), i = 1, 6)
   WRITE(stdout, '(5x, &
        & "crystal axes: (cart. coord. in units of a_0)",/, &
-       &         3(15x,"a(",i1,") = (",3f8.4," )  ",/ ) )') &
+       &         3(15x,"a(",i1,") = (",3f16.12," )  ",/ ) )') &
        & (apol, (at(ipol, apol), ipol = 1, 3), apol = 1, 3)
   WRITE(stdout, '(5x, &
        & "reciprocal axes: (cart. coord. in units 2 pi/a_0)",/, &
-       &         3(15x,"b(",i1,") = (",3f8.4," )  ",/ ) )') &
+       &         3(15x,"b(",i1,") = (",3f16.12," )  ",/ ) )') &
        & (apol, (bg(ipol, apol), ipol = 1, 3), apol = 1, 3)
   !
   ! Description of the atoms inside the unit cell
@@ -202,7 +202,7 @@
   IF (iverbosity == 1 .OR. nkstot < 10000) THEN
      WRITE(stdout, '(23x,"cart. coord. in units 2pi/a_0")')
      DO ik = 1, nkstot
-        WRITE(stdout, '(8x,"k(",i5,") = (",3f12.7,"), wk =",f12.7)') ik, &
+        WRITE(stdout, '(8x,"k(",i5,") = (",3f16.12,"), wk =",f12.7)') ik, &
              (xk_all(ipol, ik) , ipol = 1, 3), wk(ik)
      ENDDO
   ENDIF
@@ -214,7 +214,7 @@
                      + at(3, ipol) * xk_all(3, ik)
            ! xkg are the components of xk in the reciprocal lattice basis
         ENDDO
-        WRITE(stdout, '(8x,"k(",i5,") = (",3f12.7,"), wk =",f12.7)') &
+        WRITE(stdout, '(8x,"k(",i5,") = (",3f16.12,"), wk =",f12.7)') &
              ik, (xkg(ipol), ipol = 1, 3), wk(ik)
      ENDDO
   ENDIF
