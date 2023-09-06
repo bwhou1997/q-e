@@ -1075,18 +1075,18 @@
         call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, atomic_masses, atomic_masses_dims, ierr)  
 
         ! Write types. 
-        ityp_dims = shape(ityp)
-        ityp_rank = size(ityp)
-        call h5screate_simple_f(ityp_rank, ityp_dims, filespace_id, ierr)
-        call h5dcreate_f(file_id, 'itype', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, ityp, ityp_dims, ierr)  
+        !ityp_dims = shape(ityp)
+        !ityp_rank = size(ityp)
+        !call h5screate_simple_f(ityp_rank, ityp_dims, filespace_id, ierr)
+        !call h5dcreate_f(file_id, 'itype', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        !call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, ityp, ityp_dims, ierr)  
 
         ! Write amasses. (3*nat)
-        amass_dims = shape(amass)
-        amass_rank = size(amass)
-        call h5screate_simple_f(amass_rank, amass_dims, filespace_id, ierr)
-        call h5dcreate_f(file_id, 'amass', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
-        call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, amass, amass_dims, ierr)  
+        !amass_dims = shape(amass)
+        !amass_rank = size(amass)
+        !call h5screate_simple_f(amass_rank, amass_dims, filespace_id, ierr)
+        !call h5dcreate_f(file_id, 'amass', H5T_IEEE_F64LE, filespace_id, dataset_id, ierr)
+        !call h5dwrite_f(dataset_id, H5T_IEEE_F64LE, amass, amass_dims, ierr)  
         
         ! Write dynq  (3*nat, 3*nat, nqcs)
         dynq_dims = shape(dynq)
