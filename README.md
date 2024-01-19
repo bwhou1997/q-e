@@ -16,6 +16,18 @@ Using "make"
 ./configure [options]
 make all
 ```
+
+In Frontera
+```
+./configure --enable-parallel --with-hdf5=/opt/apps/intel19/impi19_0/phdf5/1.10.4/x86_64/bin --enable-openmp --with-hdf5-include=/opt/apps/intel19/impi19_0/phdf5/1.10.4/x86_64/include/
+```
+
+In Perlmutter
+```
+./configure --enable-parallel --with-hdf5=/opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/bin/ --enable-openmp --with-hdf5-include=/opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/include/ --with-hdf5-libs="-L/opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/lib /opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/lib/libhdf5hl_fortran.a /opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/lib/libhdf5_hl.a /opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/lib/libhdf5_fortran.a /opt/cray/pe/hdf5-parallel/1.12.2.9/gnu/12.3/lib/libhdf5.a -lz -ldl -lm"
+```
+
+
 "make" alone prints a list of acceptable targets. Optionally,
 `make -jN` runs parallel compilation on `N` processors.
 Link to binaries are found in bin/.
